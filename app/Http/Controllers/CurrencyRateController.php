@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\CurrencyRateRequest;
 use App\Repositories\CurrencyRateRepositoryInterface;
+use App\Services\CurrencyRateService;
 use Carbon\Carbon;
 
 class CurrencyRateController extends Controller
@@ -75,55 +76,20 @@ class CurrencyRateController extends Controller
      *      )
      * )
      */
-    public function index(CurrencyRateRequest $request)
+    public function index(CurrencyRateRequest $request, CurrencyRateService $service)
     {
         try {
             $currencyCode = $request->input('currencyCode');
-            $currency = $this->repository->getCurrencyByCode($currencyCode);
-
-            if (!$currency) {
-                return response()->json(['error' => 'Валюта не найдена'], 404);
-            }
-
             $date = $request->input('date');
-            $previousDate = Carbon::parse($date)->subDay()->format('Y-m-d');
+            $baseCurrencyCode = $request->input('baseCurrencyCode');
 
-            if (!$rate = $this->repository->getRateByCurrencyAndDate($currency->id, $date)) {
-                return response()->json(['error' => 'Данных по запрашиваемой дате не найдено'], 404);
-            }
-            if (!$previousRate = $this->repository->getRateByCurrencyAndDate($currency->id, $previousDate)) {
-                return response()->json(['error' => 'Данных за предыдущий день не найдено'], 404);
-            }
-
-            $diff = $rate->rate - $previousRate->rate;
-            $rate->diff = round($diff, 4);
-
-            $baseCurrencyRate = 1;
-            if ($request->has('baseCurrencyCode') && $request->input('baseCurrencyCode') !== 'RUR') {
-                $baseCurrencyCode = $request->input('baseCurrencyCode');
-                $baseCurrency = $this->repository->getCurrencyByCode($baseCurrencyCode);
-
-                if (!$baseCurrency) {
-                    return response()->json(['error' => 'Базовая валюта не найдена'], 404);
-                }
-
-                $baseRate = $this->repository->getRateByCurrencyAndDate($baseCurrency->id, $date);
-                $baseCurrencyRate = $baseRate->rate;
-            }
-
-            $relativeRate = $rate->rate / $baseCurrencyRate;
-            $relativeDiff = $rate->diff / $baseCurrencyRate;
-
-            $result = [
-                'value' => round(floatval($relativeRate), 4),
-                'diff' => round($relativeDiff, 4),
-            ];
+            $result = $service->getCurrencyRateData($currencyCode, $date, $baseCurrencyCode);
 
             return response()->json($result);
         } catch (\PDOException $e) {
             return response()->json(['error' => 'Ошибка базы данных: ' . $e->getMessage()], 500);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Произошла внутренняя ошибка: ' . $e->getMessage()], 500);
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 }
